@@ -59,11 +59,3 @@ La UI marca como **Pendiente de sincronizar** los Favoritos o las Notas creados 
 
 Para observar el flujo en la consola de Expo/Metro, busca los mensajes con prefijo `[offline-sync]`. Cada evento incluye fecha y hora local (`dateTime`) y marca UTC (`timestamp`): se registra cuando el cambio optimista se escribe en la caché, al restaurarse la conexión y cuando MockAPI confirma la sincronización. Si la operación falla, también se registra el rollback.
 
-## Demostración en video (4–6 minutos)
-
-1. **0:00–0:40 — Presentación:** explicar la Pokédex, PokeAPI, MockAPI y las pantallas de colección.
-2. **0:40–1:40 — Consultas y caché:** buscar Pokémon, guardar un favorito y una nota; mostrar Favoritos y Notas en la colección.
-3. **1:40–2:30 — Persistencia:** cerrar y abrir la app para demostrar que la información consultada se conserva.
-4. **2:30–3:50 — Modo offline:** activar modo avión, crear un favorito y guardar/editar una nota; mostrar el indicador de pendiente.
-5. **3:50–4:40 — Reintento:** cerrar y reabrir la app todavía offline, verificar que los cambios siguen visibles y desactivar modo avión para que las mutaciones pausadas se sincronicen.
-6. **4:40–5:30 — Verificación y explicación:** mostrar los registros en MockAPI y explicar invalidación, `staleTime`, `gcTime` y `maxAge`.
