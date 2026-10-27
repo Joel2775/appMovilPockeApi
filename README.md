@@ -1,56 +1,69 @@
-# Welcome to your Expo app 👋
+# Bitácora Pokémon
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Aplicación móvil construida con Expo, React Native y TanStack Query. Consulta Pokémon desde PokeAPI y permite guardar Favoritos y Notas en MockAPI. La caché se persiste localmente y las mutaciones se ponen en cola cuando el dispositivo queda sin conexión.
 
-## Get started
+## Configuración
 
-1. Install dependencies
+1. Instala las dependencias con `npm install`.
+2. En el proyecto MockAPI agrega el recurso `favorites` y amplía `notes` con los campos que se indican abajo.
+3. La URL base está en `.env.example`; copia ese archivo a `.env` si necesitas restaurar la configuración local.
+4. Reinicia Expo para cargar la variable: `npx expo start`.
 
-   ```bash
-   npm install
-   ```
+El endpoint base se configura en `EXPO_PUBLIC_MOCKAPI_BASE_URL`. La app construye las rutas `/favorites` y `/notes`. No pongas secretos en variables `EXPO_PUBLIC_`: su valor se incluye en el bundle de la aplicación.
 
-2. Start the app
+### Datos guardados
 
-   ```bash
-   npx expo start
-   ```
+La URL base configurada es `https://6adffbfa8e42963c8d5ea09c.mockapi.io`; la app consulta `/favorites` y `/notes`. El endpoint `/notes` ya existe y responde correctamente. El endpoint `/favorites` todavía no existe y debes crearlo en MockAPI antes de usar Favoritos.
 
-In the output, you'll find options to open the app in a
+Conserva el campo existente `pockeName` en `notes` y agrega `pokemonId`, `spriteUrl` y `updatedAt`, para que la app pueda relacionar cada nota con su Pokémon. La app crea notas con esta forma:
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```json
+{
+  "pokemonId": 25,
+  "pockeName": "pikachu",
+  "spriteUrl": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png",
+  "content": "Mi primera nota",
+  "updatedAt": "2026-10-26T20:00:00.000Z"
+}
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Para el recurso `favorites`, configura los campos `pokemonId`, `pokemonName`, `spriteUrl` y `createdAt`. MockAPI asigna el `id` persistente al crear cada registro. Las notas existentes se editan con `PATCH`; los favoritos y notas se eliminan por su `id`.
 
-### Other setup steps
+## Caché, persistencia y sincronización
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+### Claves de consulta e invalidación
 
-## Learn more
+Las claves están centralizadas en [`src/api/queryKeys.ts`](./src/api/queryKeys.ts) y mantienen jerarquías para `pokemon`, `favorites` y `notes`, con niveles `all`, `list` y `detail`.
 
-To learn more about developing your project with Expo, look at the following resources:
+- **Crear favorito (`POST`)**: la mutación agrega optimistamente un elemento con `pending: true`, y al recibir la respuesta sustituye el ID temporal por el ID real de MockAPI. Después invalida `queryKeys.favorites.list()` para confirmar la colección desde el servidor.
+- **Eliminar favorito (`DELETE`)**: retira optimistamente el registro, restaura la caché si falla y luego invalida la lista de Favoritos.
+- **Crear nota (`POST`)**: añade una nota optimista marcada como pendiente, la reemplaza por la respuesta persistida y luego invalida `queryKeys.notes.list()`.
+- **Editar nota (`PATCH`)**: actualiza el texto optimistamente, restaura el valor previo si falla e invalida tanto `queryKeys.notes.detail(id)` como la lista de Notas para sincronizar la vista individual y la colección.
+- **Eliminar nota (`DELETE`)**: elimina optimistamente, revierte en caso de error e invalida la lista y el detalle de la nota afectada.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+La invalidación fuerza una lectura de los datos confirmados por MockAPI. En una creación esto es especialmente importante: permite que la interfaz use el ID real de la base de datos en vez de conservar el ID temporal de la actualización optimista.
 
-## Join the community
+### Tiempos de caché
 
-Join our community of developers creating universal apps.
+- **PokeAPI** usa un `staleTime` de 12 horas: los datos de especies cambian poco, por lo que la caché local evita solicitudes repetidas y facilita la navegación offline.
+- **MockAPI** usa un `staleTime` de 1 minuto: Favoritos y Notas pueden cambiar con frecuencia y deben volver a validarse con mayor regularidad.
+- El `gcTime` global es de 24 horas, igual al `maxAge` del persister. Así, la caché que sigue vigente en AsyncStorage también puede ser hidratada por TanStack Query.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Si `gcTime` fuera menor que `maxAge`, TanStack Query podría retirar de memoria consultas antes de que expire la copia persistida. Al restaurar una sesión, los datos pueden haber expirado según la política de caché aunque todavía permanezcan guardados; esto genera lecturas y revalidaciones inconsistentes y puede eliminar la ventaja de tener una copia local válida.
+
+### Mutaciones offline
+
+NetInfo actualiza el `onlineManager` de TanStack Query. Las mutaciones usan `networkMode: 'online'`, por lo que quedan pausadas sin conexión. AsyncStorage persiste la caché y las mutaciones pausadas; al hidratar el proveedor se ejecuta `resumePausedMutations()` para enviarlas cuando vuelva la conectividad.
+
+La UI marca como **Pendiente de sincronizar** los Favoritos o las Notas creados o editados optimistamente. Si MockAPI devuelve un error, se muestra el error y se revierte la caché al estado anterior.
+
+Para observar el flujo en la consola de Expo/Metro, busca los mensajes con prefijo `[offline-sync]`. Cada evento incluye fecha y hora local (`dateTime`) y marca UTC (`timestamp`): se registra cuando el cambio optimista se escribe en la caché, al restaurarse la conexión y cuando MockAPI confirma la sincronización. Si la operación falla, también se registra el rollback.
+
+## Demostración en video (4–6 minutos)
+
+1. **0:00–0:40 — Presentación:** explicar la Pokédex, PokeAPI, MockAPI y las pantallas de colección.
+2. **0:40–1:40 — Consultas y caché:** buscar Pokémon, guardar un favorito y una nota; mostrar Favoritos y Notas en la colección.
+3. **1:40–2:30 — Persistencia:** cerrar y abrir la app para demostrar que la información consultada se conserva.
+4. **2:30–3:50 — Modo offline:** activar modo avión, crear un favorito y guardar/editar una nota; mostrar el indicador de pendiente.
+5. **3:50–4:40 — Reintento:** cerrar y reabrir la app todavía offline, verificar que los cambios siguen visibles y desactivar modo avión para que las mutaciones pausadas se sincronicen.
+6. **4:40–5:30 — Verificación y explicación:** mostrar los registros en MockAPI y explicar invalidación, `staleTime`, `gcTime` y `maxAge`.
